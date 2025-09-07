@@ -19,8 +19,6 @@ var (
 	address = "127.0.0.1:9005"
 	// the directory to save the images in
 	root = "/var/www/i.fourtf.com/"
-	// the root of the link that will be generated
-	webRoot = "https://i.fourtf.com/"
 
 	// maximum age for the files
 	// the program will delete the files older than maxAge every 2 hours
@@ -126,12 +124,10 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var savePath string
-	var link string
+	var random string
 
 	// find a random filename that doesn't exist already
 	for i := 0; i < 100; i++ {
-		random := ""
-
 		for j := 0; j < randomAdjectivesCount; j++ {
 			random += strings.TrimSpace(strings.Title(adjectives[rand.Intn(len(adjectives))]))
 		}
@@ -140,12 +136,13 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 
 		// fuck with link
 		savePath = root + random + ext
-		link = webRoot + random + ext
 
 		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			break
 		}
 	}
+
+	link := "https://" + r.Host + "/" + random + ext
 
 	// save the file
 	outfile, err := os.Create(savePath)
