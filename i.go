@@ -18,6 +18,7 @@ import (
 type Env struct {
 	uploadsDirectory string
 	maxFileAge       int
+	disableCleanup   bool
 }
 
 const idLength = 10
@@ -40,12 +41,15 @@ func main() {
 			logger.Error("failed to decode filetypes.json", "error", err)
 		}
 	}
-	go func() {
-		for {
-			collectGarbage(logger, env.uploadsDirectory, env.maxFileAge)
-			<-time.After(cleanUpInterval)
-		}
-	}()
+	if !env.disableCleanup {
+		go func() {
+			logger.Info("starting cleanup routine", "interval", cleanUpInterval)
+			for {
+				collectGarbage(logger, env.uploadsDirectory, env.maxFileAge)
+				<-time.After(cleanUpInterval)
+			}
+		}()
+	}
 	server := &http.Server{
 		ReadTimeout:  time.Minute,
 		WriteTimeout: time.Minute,
@@ -116,9 +120,18 @@ func checkEnv() (*Env, error) {
 	if err != nil {
 		return nil, errors.New("MAX_FILE_AGE is not a valid integer")
 	}
+	disableCleanup, exists := os.LookupEnv("DISABLE_CLEANUP")
+	if !exists {
+		return nil, errors.New("DISABLE_CLEANUP environment variable not set")
+	}
+	disableCleanupBool, err := strconv.ParseBool(disableCleanup)
+	if err != nil {
+		return nil, errors.New("DISABLE_CLEANUP is not a valid boolean")
+	}
 	env := &Env{
 		uploadsDirectory: uploadsDirectory,
 		maxFileAge:       maxAgeInt,
+		disableCleanup:   disableCleanupBool,
 	}
 	return env, nil
 }

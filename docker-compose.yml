@@ -7,6 +7,7 @@ services:
     environment:
       - UPLOADS_DIRECTORY
       - MAX_FILE_AGE
+      - DISABLE_CLEANUP
     expose:
       - 80
     volumes:
