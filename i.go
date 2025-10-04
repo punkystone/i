@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
@@ -24,7 +23,7 @@ var (
 	// the program will delete the files older than maxAge every 2 hours
 	maxAge = time.Hour * 24 * 365
 	// files to be ignored when deleting old files
-	deleteIgnoreRegexp = regexp.MustCompile("index\\.html|favicon\\.ico")
+	deleteIgnoreRegexp = regexp.MustCompile(`index\\.html|favicon\\.ico`)
 
 	// length of the random filename
 	randomAdjectivesCount = 2
@@ -33,9 +32,7 @@ var (
 )
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
-	b, err := ioutil.ReadFile("./filetypes.json")
+	b, err := os.ReadFile("./filetypes.json")
 
 	if err == nil {
 		data := make(map[string][]string)
@@ -99,7 +96,6 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error parsing uploaded file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	defer infile.Close()
 
 	filename := header.Filename
@@ -112,7 +108,6 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		ext = ""
 	} else {
 		ext = filename[index:]
-		filename = filename[:index]
 	}
 
 	lastWord := "File"
@@ -162,11 +157,11 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(link))
 
 	// do this or it doesn't work
-	io.Copy(ioutil.Discard, r.Body)
+	io.Copy(io.Discard, r.Body)
 }
 
 func collectGarbage() {
-	files, err := ioutil.ReadDir(root)
+	files, err := os.ReadDir(root)
 
 	if err != nil {
 		return
@@ -178,8 +173,13 @@ func collectGarbage() {
 		if file.IsDir() || deleteIgnoreRegexp.MatchString(fname) {
 			continue
 		}
+		info, err := file.Info()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
 
-		if time.Since(file.ModTime()) > maxAge {
+		if time.Since(info.ModTime()) > maxAge {
 			err := os.Remove(root + fname)
 
 			if err != nil {

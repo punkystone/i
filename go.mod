@@ -1,3 +1,3 @@
-module github.com/fourtf/i
+module github.com/punkystone/i
 
-go 1.16
+go 1.25.1
