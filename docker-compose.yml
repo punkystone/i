@@ -1,0 +1,23 @@
+services:
+  i-service:
+    container_name: i-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - 80
+    volumes:
+      - ./$UPLOADS_DIRECTORY:/uploads
+
+  i-caddy:
+    image: caddy
+    container_name: i-caddy
+    ports:
+      - 80:80
+    depends_on:
+      - i-service
+    volumes:
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./$UPLOADS_DIRECTORY:/uploads

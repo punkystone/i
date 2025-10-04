@@ -1,0 +1,5 @@
+:80 {
+    root * /uploads
+    file_server
+    reverse_proxy /upload i-service:80
+}
