@@ -5,9 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,23 +24,25 @@ const idLength = 10
 const cleanUpInterval = 2 * time.Hour
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	env, err := checkEnv()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("missing environment variables", "error", err)
+		os.Exit(1)
 	}
 	fileTypesFile, err := os.Open("./filetypes.json")
 	fileTypes := []string{}
 	if err != nil {
-		fmt.Println(err)
+		logger.Error("failed to open filetypes.json", "error", err)
 	} else {
 		err = json.NewDecoder(fileTypesFile).Decode(&fileTypes)
 		if err != nil {
-			fmt.Println(err)
+			logger.Error("failed to decode filetypes.json", "error", err)
 		}
 	}
 	go func() {
 		for {
-			collectGarbage(env.uploadsDirectory, env.maxFileAge)
+			collectGarbage(logger, env.uploadsDirectory, env.maxFileAge)
 			<-time.After(cleanUpInterval)
 		}
 	}()
@@ -51,20 +52,20 @@ func main() {
 		Addr:         ":80",
 	}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		handleUpload(w, r, env.uploadsDirectory)
+		handleUpload(w, r, logger, env.uploadsDirectory)
 	})
 	err = server.ListenAndServe()
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		logger.Error("failed to start server", "error ", err)
 	}
 }
 
-func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory string) {
+func handleUpload(w http.ResponseWriter, r *http.Request, logger *slog.Logger, uploadsDirectory string) {
 	defer r.Body.Close()
 	uploadedFile, header, err := r.FormFile("file")
 	if err != nil {
-		fmt.Println(err)
-		http.Error(w, "Error parsing uploaded file: "+err.Error(), http.StatusBadRequest)
+		logger.Error("failed to parse uploaded file", "error", err)
+		http.Error(w, "error parsing uploaded file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	defer uploadedFile.Close()
@@ -80,13 +81,13 @@ func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory strin
 	savePath := filepath.Join(uploadsDirectory, id) + extension
 	savedFile, err := os.Create(savePath)
 	if err != nil {
-		fmt.Println(err)
-		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
+		logger.Error("error while creating file", "error", err)
+		http.Error(w, "error while creating file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	_, err = io.Copy(savedFile, uploadedFile)
 	if err != nil {
-		fmt.Println(err)
+		logger.Error("error while saving file", "error", err)
 		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -94,11 +95,11 @@ func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory strin
 	link := "https://" + r.Host + "/" + id + extension
 	_, err = w.Write([]byte(link))
 	if err != nil {
-		fmt.Println(err)
+		logger.Error("error while writing response", "error", err)
 	}
 	_, err = io.Copy(io.Discard, r.Body)
 	if err != nil {
-		fmt.Println(err)
+		logger.Error("error while discarding request body", "error", err)
 	}
 }
 
@@ -122,33 +123,29 @@ func checkEnv() (*Env, error) {
 	return env, nil
 }
 
-func collectGarbage(uploadsDirectory string, maxAge int) {
+func collectGarbage(logger *slog.Logger, uploadsDirectory string, maxAge int) {
 	files, err := os.ReadDir(uploadsDirectory)
-
 	if err != nil {
+		logger.Error("error reading directory", "error", err)
 		return
 	}
-
 	for _, file := range files {
-		fname := file.Name()
-
+		filename := file.Name()
 		if file.IsDir() {
 			continue
 		}
 		info, err := file.Info()
 		if err != nil {
-			fmt.Println(err)
+			logger.Error("error getting file info", "error", err)
 			continue
 		}
 		if time.Since(info.ModTime()) > (time.Hour * time.Duration(maxAge)) {
-			err := os.Remove(filepath.Join(uploadsDirectory, fname))
-
+			err := os.Remove(filepath.Join(uploadsDirectory, filename))
 			if err != nil {
-				fmt.Println(err)
+				logger.Error("error removing file", "error", err)
 				continue
 			}
-
-			fmt.Printf("Removed %s \n", fname)
+			logger.Info("removed old file", "info", filename)
 		}
 	}
 }
