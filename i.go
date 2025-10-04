@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -23,10 +22,6 @@ type Env struct {
 }
 
 var (
-	// files to be ignored when deleting old files
-	deleteIgnoreRegexp = regexp.MustCompile(`index\\.html|favicon\\.ico`)
-
-	// length of the random filename
 	randomAdjectivesCount = 2
 	adjectives            = make([]string, 0)
 	filetypes             = make(map[string]string)
@@ -199,7 +194,7 @@ func collectGarbage(uploadsDirectory string, maxAge int) {
 	for _, file := range files {
 		fname := file.Name()
 
-		if file.IsDir() || deleteIgnoreRegexp.MatchString(fname) {
+		if file.IsDir() {
 			continue
 		}
 		info, err := file.Info()
