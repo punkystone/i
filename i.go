@@ -3,15 +3,24 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
+
+type Env struct {
+	uploadsDirectory string
+	maxFileAge       int
+}
 
 var (
 	// the address to listen on
@@ -32,6 +41,11 @@ var (
 )
 
 func main() {
+	env, err := checkEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%#v\n", env)
 	b, err := os.ReadFile("./filetypes.json")
 
 	if err == nil {
@@ -68,15 +82,13 @@ func main() {
 		adjectives = append(adjectives, string(line))
 	}
 
-	// uncomment to collect old files
-	// go func() {
-	// 	for {
-	// 		<-time.After(time.Hour * 2)
-	// 		collectGarbage()
-	// 	}
-	// }()
+	go func() {
+		for {
+			<-time.After(time.Hour * 2)
+			collectGarbage(env.uploadsDirectory, env.maxFileAge)
+		}
+	}()
 
-	// create server with read and write timeouts and the desired address
 	server := &http.Server{
 		ReadTimeout:  time.Minute,
 		WriteTimeout: time.Minute,
@@ -84,11 +96,13 @@ func main() {
 	}
 
 	// open http server
-	http.HandleFunc("/", handleUpload)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		handleUpload(w, r, env.uploadsDirectory)
+	})
 	server.ListenAndServe()
 }
 
-func handleUpload(w http.ResponseWriter, r *http.Request) {
+func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory string) {
 	defer r.Body.Close()
 
 	infile, header, err := r.FormFile("file")
@@ -130,7 +144,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		random += lastWord
 
 		// fuck with link
-		savePath = root + random + ext
+		savePath = filepath.Join(uploadsDirectory, random, ext)
 
 		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			break
@@ -160,8 +174,28 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	io.Copy(io.Discard, r.Body)
 }
 
-func collectGarbage() {
-	files, err := os.ReadDir(root)
+func checkEnv() (*Env, error) {
+	uploadsDirectory, exists := os.LookupEnv("UPLOADS_DIRECTORY")
+	if !exists {
+		return nil, errors.New("UPLOADS_DIRECTORY environment variable not set")
+	}
+	maxFileAge, exists := os.LookupEnv("MAX_FILE_AGE")
+	if !exists {
+		return nil, errors.New("MAX_FILE_AGE environment variable not set")
+	}
+	maxAgeInt, err := strconv.Atoi(maxFileAge)
+	if err != nil {
+		return nil, errors.New("MAX_FILE_AGE is not a valid integer")
+	}
+	env := &Env{
+		uploadsDirectory: uploadsDirectory,
+		maxFileAge:       maxAgeInt,
+	}
+	return env, nil
+}
+
+func collectGarbage(uploadsDirectory string, maxAge int) {
+	files, err := os.ReadDir(uploadsDirectory)
 
 	if err != nil {
 		return
@@ -178,9 +212,8 @@ func collectGarbage() {
 			fmt.Println(err)
 			continue
 		}
-
-		if time.Since(info.ModTime()) > maxAge {
-			err := os.Remove(root + fname)
+		if time.Since(info.ModTime()) > (time.Hour * time.Duration(maxAge)) {
+			err := os.Remove(filepath.Join(uploadsDirectory, fname))
 
 			if err != nil {
 				fmt.Println(err)

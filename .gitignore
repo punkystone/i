@@ -2,3 +2,4 @@ i
 i.exe
 caddy-config
 caddy-data
+.env

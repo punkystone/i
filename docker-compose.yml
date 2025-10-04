@@ -4,6 +4,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    environment:
+      - UPLOADS_DIRECTORY
+      - MAX_FILE_AGE
     expose:
       - 80
     volumes:
