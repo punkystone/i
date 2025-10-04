@@ -17,6 +17,9 @@ services:
   i-caddy:
     image: caddy
     container_name: i-caddy
+    environment:
+      - AUTH_USER
+      - AUTH_HASHED_PASSWORD
     ports:
       - 80:80
     depends_on:

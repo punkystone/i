@@ -1,5 +1,8 @@
 :80 {
     root * /uploads
     file_server
+	basicauth /upload {
+        {$AUTH_USER} {$AUTH_HASHED_PASSWORD}
+    }
     reverse_proxy /upload i-service:80
 }
