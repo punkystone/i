@@ -23,14 +23,6 @@ type Env struct {
 }
 
 var (
-	// the address to listen on
-	address = "127.0.0.1:9005"
-	// the directory to save the images in
-	root = "/var/www/i.fourtf.com/"
-
-	// maximum age for the files
-	// the program will delete the files older than maxAge every 2 hours
-	maxAge = time.Hour * 24 * 365
 	// files to be ignored when deleting old files
 	deleteIgnoreRegexp = regexp.MustCompile(`index\\.html|favicon\\.ico`)
 
@@ -92,7 +84,7 @@ func main() {
 	server := &http.Server{
 		ReadTimeout:  time.Minute,
 		WriteTimeout: time.Minute,
-		Addr:         address,
+		Addr:         ":80",
 	}
 
 	// open http server
@@ -107,6 +99,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory strin
 
 	infile, header, err := r.FormFile("file")
 	if err != nil {
+		fmt.Println(err)
 		http.Error(w, "Error parsing uploaded file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -144,7 +137,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory strin
 		random += lastWord
 
 		// fuck with link
-		savePath = filepath.Join(uploadsDirectory, random, ext)
+		savePath = filepath.Join(uploadsDirectory, random) + ext
 
 		if _, err := os.Stat(savePath); os.IsNotExist(err) {
 			break
@@ -156,12 +149,14 @@ func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory strin
 	// save the file
 	outfile, err := os.Create(savePath)
 	if err != nil {
+		fmt.Println(err)
 		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	_, err = io.Copy(outfile, infile)
 	if err != nil {
+		fmt.Println(err)
 		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
 		return
 	}

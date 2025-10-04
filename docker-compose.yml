@@ -11,6 +11,8 @@ services:
       - 80
     volumes:
       - ./$UPLOADS_DIRECTORY:/uploads
+      - ./adjectives1.txt:/adjectives1.txt
+      - ./filetypes.json:/filetypes.json
 
   i-caddy:
     image: caddy
