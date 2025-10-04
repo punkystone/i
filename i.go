@@ -1,13 +1,13 @@
 package main
 
 import (
-	"bufio"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -21,147 +21,85 @@ type Env struct {
 	maxFileAge       int
 }
 
-var (
-	randomAdjectivesCount = 2
-	adjectives            = make([]string, 0)
-	filetypes             = make(map[string]string)
-)
+const idLength = 10
+const cleanUpInterval = 2 * time.Hour
 
 func main() {
 	env, err := checkEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%#v\n", env)
-	b, err := os.ReadFile("./filetypes.json")
-
-	if err == nil {
-		data := make(map[string][]string)
-
-		if err = json.Unmarshal(b, &data); err != nil {
-			fmt.Println(err)
-		} else {
-			for val, keys := range data {
-				for _, key := range keys {
-					filetypes["."+strings.TrimLeft(key, ".")] = val
-				}
-			}
-		}
-	}
-
-	fmt.Println(filetypes)
-
-	file, err := os.Open("./adjectives1.txt")
-
+	fileTypesFile, err := os.Open("./filetypes.json")
+	fileTypes := []string{}
 	if err != nil {
-		panic(err)
-	}
-
-	r := bufio.NewReader(file)
-
-	for {
-		line, _, err := r.ReadLine()
-
+		fmt.Println(err)
+	} else {
+		err = json.NewDecoder(fileTypesFile).Decode(&fileTypes)
 		if err != nil {
-			break
+			fmt.Println(err)
 		}
-
-		adjectives = append(adjectives, string(line))
 	}
-
 	go func() {
 		for {
-			<-time.After(time.Hour * 2)
 			collectGarbage(env.uploadsDirectory, env.maxFileAge)
+			<-time.After(cleanUpInterval)
 		}
 	}()
-
 	server := &http.Server{
 		ReadTimeout:  time.Minute,
 		WriteTimeout: time.Minute,
 		Addr:         ":80",
 	}
-
-	// open http server
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		handleUpload(w, r, env.uploadsDirectory)
 	})
-	server.ListenAndServe()
+	err = server.ListenAndServe()
+	if err != nil {
+		log.Fatal("ListenAndServe: ", err)
+	}
 }
 
 func handleUpload(w http.ResponseWriter, r *http.Request, uploadsDirectory string) {
 	defer r.Body.Close()
-
-	infile, header, err := r.FormFile("file")
+	uploadedFile, header, err := r.FormFile("file")
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, "Error parsing uploaded file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	defer infile.Close()
-
+	defer uploadedFile.Close()
 	filename := header.Filename
-	var ext string
-
-	// get extension from file name
+	extension := ""
 	index := strings.LastIndex(filename, ".")
-
-	if index == -1 {
-		ext = ""
-	} else {
-		ext = filename[index:]
+	if index != -1 {
+		extension = filename[index:]
 	}
-
-	lastWord := "File"
-
-	fmt.Println(ext)
-
-	if val, ok := filetypes[ext]; ok {
-		lastWord = strings.Title(val)
-	}
-
-	var savePath string
-	var random string
-
-	// find a random filename that doesn't exist already
-	for i := 0; i < 100; i++ {
-		for j := 0; j < randomAdjectivesCount; j++ {
-			random += strings.TrimSpace(strings.Title(adjectives[rand.Intn(len(adjectives))]))
-		}
-
-		random += lastWord
-
-		// fuck with link
-		savePath = filepath.Join(uploadsDirectory, random) + ext
-
-		if _, err := os.Stat(savePath); os.IsNotExist(err) {
-			break
-		}
-	}
-
-	link := "https://" + r.Host + "/" + random + ext
-
-	// save the file
-	outfile, err := os.Create(savePath)
+	idBytes := make([]byte, idLength)
+	_, _ = rand.Read(idBytes)
+	id := base64.RawURLEncoding.EncodeToString(idBytes)[:idLength]
+	savePath := filepath.Join(uploadsDirectory, id) + extension
+	savedFile, err := os.Create(savePath)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	_, err = io.Copy(outfile, infile)
+	_, err = io.Copy(savedFile, uploadedFile)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, "error while saving file: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	outfile.Close()
-
-	// return the link as the http body
-	w.Write([]byte(link))
-
-	// do this or it doesn't work
-	io.Copy(io.Discard, r.Body)
+	defer savedFile.Close()
+	link := "https://" + r.Host + "/" + id + extension
+	_, err = w.Write([]byte(link))
+	if err != nil {
+		fmt.Println(err)
+	}
+	_, err = io.Copy(io.Discard, r.Body)
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func checkEnv() (*Env, error) {

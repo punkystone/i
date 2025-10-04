@@ -319,7 +319,6 @@ linters:
       # Default: []
       disable:
         - fieldalignment # too strict
-        - shadow
       # Settings per analyzer.
       settings:
         shadow:
